@@ -1,0 +1,244 @@
+:root {
+  --bg: #0d1117;
+  --surface: #151b24;
+  --border: #363d52;
+  --text: #f0f4f8;
+  --muted: #9ca3af;
+  --accent: #f59e0b;
+  --header-bg: #12161d;
+  --row-hover: rgba(245, 158, 11, 0.08);
+  /* Opaque equivalent of --row-hover on --surface, for sticky first column so nothing shows through */
+  --row-hover-solid: #272522;
+  --font-mono: "SF Mono", "Monaco", "Inconsolata", "Fira Mono", monospace;
+  /* Height of the app header (SearchBar) so the table header sticks below it */
+  --app-header-height: 6rem;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--text);
+  background: var(--bg);
+  min-height: 100vh;
+}
+
+.header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  padding: 1rem 1.5rem;
+  background: var(--header-bg);
+  border-bottom: 1px solid var(--border);
+}
+
+.header h1 {
+  margin: 0 0 0.25rem 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.subtitle {
+  margin: 0 0 1rem 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.subtitle a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.subtitle a:hover {
+  text-decoration: underline;
+}
+
+.search-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.search-wrap label {
+  color: var(--muted);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+#search {
+  flex: 1;
+  max-width: 360px;
+  padding: 0.5rem 0.75rem;
+  font: inherit;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  outline: none;
+}
+
+#search::placeholder {
+  color: var(--muted);
+}
+
+#search:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.35);
+}
+
+.count {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.row-expand-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.header-btn {
+  padding: 0.5rem 0.65rem;
+  font: inherit;
+  font-size: 1rem;
+  line-height: 1;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  outline: none;
+}
+
+.header-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.header-btn:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.35);
+}
+
+.table-wrap {
+  overflow: auto;
+  max-height: calc(100vh - var(--app-header-height) - 2rem);
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: auto;
+  min-width: max-content;
+}
+
+::-webkit-scrollbar {
+  display:none;
+}
+
+.table th,
+.table td {
+  padding: 0.4rem 0.6rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 300px;
+}
+
+.table th {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: var(--header-bg);
+  font-weight: 600;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  user-select: none;
+  cursor: pointer;
+  box-shadow: 0 1px 0 var(--border);
+}
+
+.table th:hover {
+  color: var(--text);
+}
+
+/* First column fixed when scrolling horizontally */
+.table th:first-child {
+  left: 0;
+  z-index: 6;
+  box-shadow: 0 1px 0 var(--border), 1px 0 0 var(--border);
+}
+
+.table td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--surface);
+  box-shadow: 1px 0 0 var(--border);
+}
+
+.table tbody tr:hover td:first-child {
+  background: var(--row-hover-solid);
+}
+
+.sort-arrow {
+  opacity: 0;
+  margin-left: 0.15em;
+}
+
+.sort-arrow.visible {
+  opacity: 1;
+}
+
+.table th:last-child,
+.table td:last-child {
+  border-right: none;
+}
+
+.table tbody tr:hover td {
+  background: var(--row-hover);
+}
+
+.table td {
+  background: var(--surface);
+}
+
+.table tbody tr {
+  cursor: pointer;
+}
+
+.table tr.row-expanded td,
+.table td.cell-expanded {
+  white-space: pre-line;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.table td.empty {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.loading {
+  padding: 2rem;
+  text-align: center;
+  color: var(--muted);
+}
+
+.error {
+  padding: 2rem;
+  color: #f85149;
+}
