@@ -9,6 +9,7 @@
   --row-hover: rgba(245, 158, 11, 0.08);
   /* Opaque equivalent of --row-hover on --surface, for sticky first column so nothing shows through */
   --row-hover-solid: #272522;
+  --row-selected: rgba(245, 158, 11, 0.18);
   --font-mono: "SF Mono", "Monaco", "Inconsolata", "Fira Mono", monospace;
   /* Height of the app header (SearchBar) so the table header sticks below it */
   --app-header-height: 6rem;
@@ -25,6 +26,12 @@ body {
   line-height: 1.4;
   color: var(--text);
   background: var(--bg);
+  min-height: 100vh;
+}
+
+#root {
+  display: flex;
+  flex-direction: column;
   min-height: 100vh;
 }
 
@@ -164,6 +171,81 @@ body {
   background: var(--surface);
 }
 
+.main--split {
+  display: block;
+  flex: 1;
+  min-height: 0;
+  padding-right: 25%;
+}
+
+.main--split .main__top {
+  display: block;
+}
+
+.main--split .main__top .table-wrap {
+  max-height: calc(100vh - var(--app-header-height) - 2rem);
+}
+
+.loot-guide-panel {
+  position: fixed;
+  top: var(--app-header-height);
+  right: 0;
+  width: 25%;
+  height: calc(100vh - var(--app-header-height));
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.loot-guide-panel .table-wrap {
+  flex: 1;
+  overflow: auto;
+  max-height: none;
+}
+
+.loot-guide-panel__title {
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  background: var(--header-bg);
+  border-bottom: 1px solid var(--border);
+}
+
+.loot-guide-panel__tabs {
+  display: flex;
+  flex-direction: row;
+  border-bottom: 1px solid var(--border);
+  background: var(--header-bg);
+}
+
+.loot-guide-panel__tab {
+  padding: 0.5rem 0.75rem;
+  font: inherit;
+  font-size: 0.75rem;
+  color: var(--muted);
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  outline: none;
+}
+
+.loot-guide-panel__tab:hover {
+  color: var(--text);
+}
+
+.loot-guide-panel__tab--active {
+  color: var(--accent);
+  font-weight: 600;
+  border-bottom-color: var(--accent);
+}
+
 .table {
   width: 100%;
   border-collapse: collapse;
@@ -249,6 +331,14 @@ body {
 
 .table tbody tr:hover td {
   background: var(--row-hover);
+}
+
+.table tr.row-selected td {
+  background: var(--row-selected);
+}
+
+.table tr.row-selected:hover td {
+  background: var(--row-selected);
 }
 
 .table td {

@@ -21465,7 +21465,8 @@
     totalCount,
     filteredCount,
     onExpandAllRows,
-    onCollapseAllRows
+    onCollapseAllRows,
+    onClearSelection
   }) {
     const handleInputChange = (event) => {
       onSearchChange(event.target.value);
@@ -21541,6 +21542,16 @@
         "aria-label": "Collapse all rows"
       },
       "- Collapse"
+    ), typeof onClearSelection === "function" && /* @__PURE__ */ import_react.default.createElement(
+      "button",
+      {
+        type: "button",
+        className: "header-btn",
+        onClick: onClearSelection,
+        title: "Clear all selected items",
+        "aria-label": "Clear all selected items"
+      },
+      "\xD7 Clear"
     ))));
   }
 
@@ -21549,8 +21560,113 @@
 
   // src/react/components/TableHeader.jsx
   var import_react2 = __toESM(require_react(), 1);
-  function TableHeader({ columns, sortColumn, sortDirection, onSortChange }) {
-    return /* @__PURE__ */ import_react2.default.createElement("tr", null, columns.map((col) => {
+
+  // src/react/tableUtils.js
+  function rowSearchText(row, columns) {
+    return columns.map((col) => {
+      const v = row[col];
+      if (v == null) return "";
+      if (typeof v === "object") {
+        return Array.isArray(v) ? v.join(", ") : JSON.stringify(v);
+      }
+      return String(v);
+    }).join(" ").toLowerCase();
+  }
+  function filterItems(items, columns, keyword) {
+    const terms = keyword.toLowerCase().trim().split(/\s+/).filter(Boolean);
+    if (terms.length === 0) return items;
+    return items.filter((row) => {
+      const text = rowSearchText(row, columns);
+      return terms.every((t) => text.includes(t));
+    });
+  }
+  function isNumericValue(v) {
+    if (v === null || v === void 0 || v === "") return true;
+    const n = Number(v);
+    return !Number.isNaN(n) && Number.isFinite(n);
+  }
+  function detectNumericColumns(items, columns) {
+    const numericColumns = /* @__PURE__ */ new Set();
+    for (const col of columns) {
+      if (items.every((row) => isNumericValue(row[col]))) {
+        numericColumns.add(col);
+      }
+    }
+    return numericColumns;
+  }
+  function compareValues(a, b, col, numericColumns) {
+    const emptyA = a === null || a === void 0 || a === "";
+    const emptyB = b === null || b === void 0 || b === "";
+    if (emptyA && emptyB) return 0;
+    if (emptyA) return 1;
+    if (emptyB) return -1;
+    if (numericColumns.has(col)) {
+      const na = Number(a);
+      const nb = Number(b);
+      return na - nb;
+    }
+    return String(a).localeCompare(String(b), void 0, { sensitivity: "base" });
+  }
+  var SELECTION_COLUMN_ID = "_select";
+  function sortRows(rows, sortColumn, sortDirection, columns, numericColumns, options = {}) {
+    const { selectedItemIds = /* @__PURE__ */ new Set(), nameColumn = "name" } = options;
+    if (!sortColumn) {
+      sortColumn = SELECTION_COLUMN_ID;
+    }
+    ;
+    if (sortColumn === SELECTION_COLUMN_ID) {
+      const out2 = [...rows];
+      out2.sort((a, b) => {
+        const aSel = selectedItemIds.has(a.id);
+        const bSel = selectedItemIds.has(b.id);
+        if (aSel !== bSel) {
+          const cmp = aSel ? -1 : 1;
+          return sortDirection === "asc" ? cmp : -cmp;
+        }
+        const nameCmp = compareValues(
+          a[nameColumn],
+          b[nameColumn],
+          nameColumn,
+          numericColumns
+        );
+        return sortDirection === "asc" ? nameCmp : -nameCmp;
+      });
+      return out2;
+    }
+    if (!columns.includes(sortColumn)) return rows;
+    const out = [...rows];
+    out.sort((a, b) => {
+      const cmp = compareValues(a[sortColumn], b[sortColumn], sortColumn, numericColumns);
+      return sortDirection === "asc" ? cmp : -cmp;
+    });
+    return out;
+  }
+
+  // src/react/components/TableHeader.jsx
+  function TableHeader({
+    columns,
+    sortColumn,
+    sortDirection,
+    onSortChange,
+    showSelectionColumn = true
+  }) {
+    return /* @__PURE__ */ import_react2.default.createElement("tr", null, showSelectionColumn && /* @__PURE__ */ import_react2.default.createElement(
+      "th",
+      {
+        key: SELECTION_COLUMN_ID,
+        "data-column": SELECTION_COLUMN_ID,
+        title: "Select",
+        onClick: () => onSortChange(SELECTION_COLUMN_ID)
+      },
+      /* @__PURE__ */ import_react2.default.createElement(
+        "span",
+        {
+          className: `sort-arrow${sortColumn === SELECTION_COLUMN_ID ? " visible" : ""}`,
+          "aria-hidden": "true"
+        },
+        sortColumn === SELECTION_COLUMN_ID ? sortDirection === "asc" ? "\u2191" : "\u2193" : ""
+      )
+    ), columns.map((col) => {
       const isSorted = sortColumn === col;
       const arrow = isSorted ? sortDirection === "asc" ? "\u2191" : "\u2193" : "";
       return /* @__PURE__ */ import_react2.default.createElement(
@@ -21581,7 +21697,7 @@
   var import_react3 = __toESM(require_react(), 1);
 
   // src/react/components/cellValue.js
-  function formatCellValue(row, col, idToName, craftBenchIdToName, options = {}) {
+  function formatCellValue(row, col, idToName, benches, options = {}) {
     const expanded = options.expanded === true;
     const separator = expanded ? "\n" : ", ";
     const substitions = {
@@ -21598,8 +21714,8 @@
       const mapBenchId = (raw) => {
         const key = String(raw).trim();
         if (!key || key === "undefined" || key === "null") return null;
-        if (craftBenchIdToName && craftBenchIdToName[key] != null) {
-          return craftBenchIdToName[key];
+        if (benches && benches[key] != null) {
+          return benches[key];
         }
         return key;
       };
@@ -21649,31 +21765,37 @@
     columns,
     row,
     idToName,
-    craftBenchIdToName,
+    benches,
     isExpanded = false,
-    onRowClick
+    onRowClick,
+    isSelected = false,
+    onSelectionToggle
   }) {
-    return /* @__PURE__ */ import_react3.default.createElement(
-      "tr",
+    const trClassName = [isExpanded ? "row-expanded" : null, isSelected ? "row-selected" : null].filter(Boolean).join(" ") || void 0;
+    return /* @__PURE__ */ import_react3.default.createElement("tr", { className: trClassName, onClick: onRowClick }, onSelectionToggle != null ? /* @__PURE__ */ import_react3.default.createElement("td", { onClick: (e) => e.stopPropagation() }, /* @__PURE__ */ import_react3.default.createElement(
+      "input",
       {
-        className: isExpanded ? "row-expanded" : void 0,
-        onClick: onRowClick
-      },
-      columns.map((col) => {
-        const { text, isEmpty } = formatCellValue(
-          row,
-          col,
-          idToName,
-          craftBenchIdToName,
-          { expanded: isExpanded }
-        );
-        const cellClassNames = [
-          isEmpty ? "empty" : null,
-          isExpanded ? "cell-expanded" : null
-        ].filter(Boolean).join(" ") || void 0;
-        return /* @__PURE__ */ import_react3.default.createElement("td", { key: col, className: cellClassNames, title: text }, text);
-      })
-    );
+        type: "checkbox",
+        checked: isSelected,
+        onChange: onSelectionToggle,
+        onClick: (e) => e.stopPropagation(),
+        "aria-label": isSelected ? "Deselect item" : "Select item",
+        "aria-checked": isSelected
+      }
+    )) : null, columns.map((col) => {
+      const { text, isEmpty } = formatCellValue(
+        row,
+        col,
+        idToName,
+        benches,
+        { expanded: isExpanded }
+      );
+      const cellClassNames = [
+        isEmpty ? "empty" : null,
+        isExpanded ? "cell-expanded" : null
+      ].filter(Boolean).join(" ") || void 0;
+      return /* @__PURE__ */ import_react3.default.createElement("td", { key: col, className: cellClassNames, title: text }, text);
+    }));
   }
 
   // src/react/components/TableBody.jsx
@@ -21681,14 +21803,18 @@
     columns,
     rows,
     idToName,
-    craftBenchIdToName,
+    benches,
     expandedRowKeys = [],
-    onRowExpandToggle
+    onRowExpandToggle,
+    selectedItemIds = /* @__PURE__ */ new Set(),
+    onSelectionToggle
   }) {
     return /* @__PURE__ */ import_react4.default.createElement(import_react4.default.Fragment, null, rows.map((row, index) => {
       const rowKey = row.id ?? index;
       const isExpanded = expandedRowKeys && typeof expandedRowKeys.includes === "function" ? expandedRowKeys.includes(rowKey) : false;
       const handleRowClick = typeof onRowExpandToggle === "function" ? () => onRowExpandToggle(rowKey) : void 0;
+      const isSelected = row.id != null && selectedItemIds.has(row.id);
+      const handleSelectionToggle = typeof onSelectionToggle === "function" && row.id != null ? () => onSelectionToggle(row.id) : void 0;
       return /* @__PURE__ */ import_react4.default.createElement(
         Row,
         {
@@ -21696,9 +21822,11 @@
           columns,
           row,
           idToName,
-          craftBenchIdToName,
+          benches,
           isExpanded,
-          onRowClick: handleRowClick
+          onRowClick: handleRowClick,
+          isSelected,
+          onSelectionToggle: handleSelectionToggle
         }
       );
     }));
@@ -21712,9 +21840,12 @@
     sortDirection,
     onSortChange,
     idToName,
-    craftBenchIdToName,
+    benches,
     expandedRowKeys,
-    onRowExpandToggle
+    onRowExpandToggle,
+    selectedItemIds,
+    onSelectionToggle,
+    showSelectionColumn = true
   }) {
     return /* @__PURE__ */ import_react5.default.createElement("table", { id: "table", className: "table" }, /* @__PURE__ */ import_react5.default.createElement("thead", null, /* @__PURE__ */ import_react5.default.createElement(
       TableHeader,
@@ -21722,7 +21853,8 @@
         columns,
         sortColumn,
         sortDirection,
-        onSortChange
+        onSortChange,
+        showSelectionColumn
       }
     )), /* @__PURE__ */ import_react5.default.createElement("tbody", null, /* @__PURE__ */ import_react5.default.createElement(
       TableBody,
@@ -21730,106 +21862,249 @@
         columns,
         rows,
         idToName,
-        craftBenchIdToName,
+        benches,
         expandedRowKeys,
-        onRowExpandToggle
+        onRowExpandToggle,
+        selectedItemIds,
+        onSelectionToggle
       }
     )));
   }
 
-  // src/react/tableUtils.js
-  function rowSearchText(row, columns) {
-    return columns.map((col) => {
-      const v = row[col];
-      if (v == null) return "";
-      if (typeof v === "object") {
-        return Array.isArray(v) ? v.join(", ") : JSON.stringify(v);
-      }
-      return String(v);
-    }).join(" ").toLowerCase();
-  }
-  function filterItems(items, columns, keyword) {
-    const terms = keyword.toLowerCase().trim().split(/\s+/).filter(Boolean);
-    if (terms.length === 0) return items;
-    return items.filter((row) => {
-      const text = rowSearchText(row, columns);
-      return terms.every((t) => text.includes(t));
-    });
-  }
-  function isNumericValue(v) {
-    if (v === null || v === void 0 || v === "") return true;
-    const n = Number(v);
-    return !Number.isNaN(n) && Number.isFinite(n);
-  }
-  function detectNumericColumns(items, columns) {
-    const numericColumns = /* @__PURE__ */ new Set();
-    for (const col of columns) {
-      if (items.every((row) => isNumericValue(row[col]))) {
-        numericColumns.add(col);
+  // src/utils/craftingGraph.js
+  function buildCraftingDag(index, startItemIds) {
+    const startIds = Array.from(startItemIds, (id) => String(id));
+    const nodesSet = /* @__PURE__ */ new Set();
+    const nodeList = [];
+    const outgoingEdgesMap = /* @__PURE__ */ new Map();
+    const incomingEdgesMap = /* @__PURE__ */ new Map();
+    const processed = /* @__PURE__ */ new Set();
+    const pathSet = /* @__PURE__ */ new Set();
+    function ensureNode(id) {
+      if (!nodesSet.has(id)) {
+        nodesSet.add(id);
+        nodeList.push(id);
+        outgoingEdgesMap.set(id, []);
+        incomingEdgesMap.set(id, []);
       }
     }
-    return numericColumns;
-  }
-  function compareValues(a, b, col, numericColumns) {
-    const emptyA = a === null || a === void 0 || a === "";
-    const emptyB = b === null || b === void 0 || b === "";
-    if (emptyA && emptyB) return 0;
-    if (emptyA) return 1;
-    if (emptyB) return -1;
-    if (numericColumns.has(col)) {
-      const na = Number(a);
-      const nb = Number(b);
-      return na - nb;
+    function getEdges(id) {
+      const key = String(id);
+      const entry = index[key];
+      if (entry == null || typeof entry !== "object" || Array.isArray(entry)) {
+        return [];
+      }
+      return Object.entries(entry).map(([k, w]) => ({ targetId: String(k), weight: Number(w) }));
     }
-    return String(a).localeCompare(String(b), void 0, { sensitivity: "base" });
+    function dfs(u) {
+      const uStr = String(u);
+      if (processed.has(uStr)) return;
+      processed.add(uStr);
+      ensureNode(uStr);
+      pathSet.add(uStr);
+      for (const { targetId: v, weight } of getEdges(uStr)) {
+        if (pathSet.has(v)) {
+          console.log("Crafting DAG: skipping edge to avoid cycle", {
+            from: uStr,
+            to: v,
+            weight
+          });
+          continue;
+        }
+        ensureNode(v);
+        outgoingEdgesMap.get(uStr).push({ targetItemId: v, weight });
+        incomingEdgesMap.get(v).push({ sourceId: uStr, weight });
+        dfs(v);
+      }
+      pathSet.delete(uStr);
+    }
+    for (const id of startIds) {
+      const s = String(id);
+      ensureNode(s);
+    }
+    for (const id of startIds) {
+      dfs(String(id));
+    }
+    const inDegreeRemaining = /* @__PURE__ */ new Map();
+    for (const itemId of nodeList) {
+      inDegreeRemaining.set(itemId, incomingEdgesMap.get(itemId).length);
+    }
+    const queue = nodeList.filter((id) => inDegreeRemaining.get(id) === 0);
+    const topoOrder = [];
+    while (queue.length > 0) {
+      const u = queue.shift();
+      topoOrder.push(u);
+      for (const { targetItemId: v } of outgoingEdgesMap.get(u) ?? []) {
+        inDegreeRemaining.set(v, inDegreeRemaining.get(v) - 1);
+        if (inDegreeRemaining.get(v) === 0) {
+          queue.push(v);
+        }
+      }
+    }
+    const nodeWeights = /* @__PURE__ */ new Map();
+    for (const itemId of topoOrder) {
+      const incoming = incomingEdgesMap.get(itemId) ?? [];
+      if (incoming.length === 0) {
+        nodeWeights.set(itemId, 1);
+      } else {
+        let sum = 0;
+        for (const { sourceId, weight } of incoming) {
+          sum += (nodeWeights.get(sourceId) ?? 0) * weight;
+        }
+        nodeWeights.set(itemId, sum);
+      }
+    }
+    return nodeList.map((itemId) => ({
+      itemId,
+      edges: outgoingEdgesMap.get(itemId) ?? [],
+      incomingEdges: incomingEdgesMap.get(itemId) ?? [],
+      weight: nodeWeights.get(itemId) ?? 1
+    }));
   }
-  function sortRows(rows, sortColumn, sortDirection, columns, numericColumns) {
-    if (!sortColumn || !columns.includes(sortColumn)) return rows;
-    const out = [...rows];
-    out.sort((a, b) => {
-      const cmp = compareValues(a[sortColumn], b[sortColumn], sortColumn, numericColumns);
-      return sortDirection === "asc" ? cmp : -cmp;
-    });
-    return out;
+
+  // src/react/persistence.js
+  var STORAGE_KEY = "arcdata-app-state";
+  var SCHEMA_VERSION = 1;
+  function getDefaultState() {
+    return {
+      version: SCHEMA_VERSION,
+      searchTerm: "",
+      sortColumn: null,
+      sortDirection: "asc",
+      expandedRowKeys: [],
+      selectedItemIds: [],
+      lootGuideMode: "crafting",
+      sortColumnDag: "weight",
+      sortDirectionDag: "asc"
+    };
+  }
+  function loadState() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw == null) return null;
+      const parsed = JSON.parse(raw);
+      if (parsed == null || typeof parsed !== "object") return null;
+      return {
+        version: parsed.version ?? SCHEMA_VERSION,
+        searchTerm: typeof parsed.searchTerm === "string" ? parsed.searchTerm : "",
+        sortColumn: parsed.sortColumn ?? null,
+        sortDirection: parsed.sortDirection === "desc" ? "desc" : "asc",
+        expandedRowKeys: Array.isArray(parsed.expandedRowKeys) ? parsed.expandedRowKeys : [],
+        selectedItemIds: Array.isArray(parsed.selectedItemIds) ? parsed.selectedItemIds : [],
+        lootGuideMode: parsed.lootGuideMode === "recycling" || parsed.lootGuideMode === "salvaging" ? parsed.lootGuideMode : "crafting",
+        sortColumnDag: typeof parsed.sortColumnDag === "string" ? parsed.sortColumnDag : "weight",
+        sortDirectionDag: parsed.sortDirectionDag === "desc" ? "desc" : "asc"
+      };
+    } catch {
+      return null;
+    }
+  }
+  function saveState(state) {
+    try {
+      const toSave = {
+        version: SCHEMA_VERSION,
+        searchTerm: state.searchTerm ?? "",
+        sortColumn: state.sortColumn ?? null,
+        sortDirection: state.sortDirection === "desc" ? "desc" : "asc",
+        expandedRowKeys: Array.isArray(state.expandedRowKeys) ? state.expandedRowKeys : [],
+        selectedItemIds: state.selectedItemIds instanceof Set ? Array.from(state.selectedItemIds) : Array.isArray(state.selectedItemIds) ? state.selectedItemIds : [],
+        lootGuideMode: state.lootGuideMode ?? "crafting",
+        sortColumnDag: state.sortColumnDag ?? "weight",
+        sortDirectionDag: state.sortDirectionDag === "desc" ? "desc" : "asc"
+      };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave));
+    } catch {
+    }
   }
 
   // src/react/App.jsx
+  function buildIdToFieldIndex(items, fieldName) {
+    return Object.fromEntries(
+      items.filter(
+        (row) => row.id != null && row[fieldName] != null && typeof row[fieldName] === "object" && !Array.isArray(row[fieldName])
+      ).map((row) => [String(row.id), row[fieldName]])
+    );
+  }
   function App() {
+    const initialState = (0, import_react6.useMemo)(() => {
+      const p = loadState();
+      const d = getDefaultState();
+      return p ? { ...d, ...p } : d;
+    }, []);
     const [items, setItems] = (0, import_react6.useState)([]);
     const [columns, setColumns] = (0, import_react6.useState)([]);
     const [numericColumns, setNumericColumns] = (0, import_react6.useState)(() => /* @__PURE__ */ new Set());
     const [idToName, setIdToName] = (0, import_react6.useState)(() => ({}));
-    const [craftBenchIdToName, setCraftBenchIdToName] = (0, import_react6.useState)(() => ({}));
-    const [sortColumn, setSortColumn] = (0, import_react6.useState)(null);
-    const [sortDirection, setSortDirection] = (0, import_react6.useState)("asc");
-    const [searchTerm, setSearchTerm] = (0, import_react6.useState)("");
-    const [expandedRowKeys, setExpandedRowKeys] = (0, import_react6.useState)([]);
+    const [idToRecipe, setIdToRecipe] = (0, import_react6.useState)(() => ({}));
+    const [idToRecyclesInto, setIdToRecyclesInto] = (0, import_react6.useState)(() => ({}));
+    const [idToSalvagesInto, setIdToSalvagesInto] = (0, import_react6.useState)(() => ({}));
+    const [benches, setbenches] = (0, import_react6.useState)(() => ({}));
+    const [sortColumn, setSortColumn] = (0, import_react6.useState)(initialState.sortColumn);
+    const [sortDirection, setSortDirection] = (0, import_react6.useState)(initialState.sortDirection);
+    const [searchTerm, setSearchTerm] = (0, import_react6.useState)(initialState.searchTerm);
+    const [expandedRowKeys, setExpandedRowKeys] = (0, import_react6.useState)(initialState.expandedRowKeys);
+    const [selectedItemIds, setSelectedItemIds] = (0, import_react6.useState)(
+      () => new Set(initialState.selectedItemIds)
+    );
+    const [lootGuideMode, setLootGuideMode] = (0, import_react6.useState)(initialState.lootGuideMode);
+    const [craftingDag, setCraftingDag] = (0, import_react6.useState)(() => []);
+    const [sortColumnDag, setSortColumnDag] = (0, import_react6.useState)(initialState.sortColumnDag);
+    const [sortDirectionDag, setSortDirectionDag] = (0, import_react6.useState)(initialState.sortDirectionDag);
     const [error, setError] = (0, import_react6.useState)(null);
     const [loading, setLoading] = (0, import_react6.useState)(true);
     (0, import_react6.useEffect)(() => {
       async function load() {
         try {
-          const [itemsRes, columnsRes, idToNameRes, craftBenchIdToNameRes] = await Promise.all([
+          const [itemsRes, columnsRes, benchesRes] = await Promise.all([
             fetch("data/items.json"),
             fetch("columns.json"),
-            fetch("data/itemIdToName.json"),
-            fetch("data/craftBenchIdToName.json")
+            fetch("data/benches.json")
           ]);
-          if (!itemsRes.ok || !columnsRes.ok || !idToNameRes.ok || !craftBenchIdToNameRes.ok) {
+          if (!itemsRes.ok || !columnsRes.ok || !benchesRes.ok) {
             throw new Error("Failed to load data");
           }
-          const [itemsData, columnsData, idToNameData, craftBenchIdToNameData] = await Promise.all([
+          const [itemsData, columnsData, benchesData] = await Promise.all([
             itemsRes.json(),
             columnsRes.json(),
-            idToNameRes.json(),
-            craftBenchIdToNameRes.json()
+            benchesRes.json()
           ]);
+          const indexStart = performance.now();
+          const idToNameData = Object.fromEntries(
+            itemsData.filter((row) => row.id != null && row.name != null).map((row) => [String(row.id), row.name])
+          );
+          const idToRecipeData = buildIdToFieldIndex(itemsData, "recipe");
+          const idToRecyclesIntoData = buildIdToFieldIndex(itemsData, "recyclesInto");
+          const idToSalvagesIntoData = buildIdToFieldIndex(itemsData, "salvagesInto");
+          const indexMs = performance.now() - indexStart;
+          console.log(
+            `indices built in ${indexMs.toFixed(2)} ms (idToName, idToRecipe, idToRecyclesInto, idToSalvagesInto)`
+          );
           setItems(itemsData);
           setColumns(columnsData);
           setIdToName(idToNameData);
-          setCraftBenchIdToName(craftBenchIdToNameData);
+          setIdToRecipe(idToRecipeData);
+          setIdToRecyclesInto(idToRecyclesIntoData);
+          setIdToSalvagesInto(idToSalvagesIntoData);
+          setbenches(benchesData);
           setNumericColumns(detectNumericColumns(itemsData, columnsData));
-          setSortColumn((prev) => prev ?? (columnsData[0] ?? null));
+          const validIds = new Set(itemsData.map((r) => r.id).filter(Boolean));
+          const validRowKeys = new Set(itemsData.map((r, i) => r.id ?? i));
+          const validColumns = /* @__PURE__ */ new Set([...columnsData, SELECTION_COLUMN_ID]);
+          const validDagColumns = /* @__PURE__ */ new Set(["names", "weight", "id"]);
+          setSelectedItemIds((prev) => {
+            const filtered = [...prev].filter((id) => validIds.has(id));
+            return filtered.length === prev.size ? prev : new Set(filtered);
+          });
+          setExpandedRowKeys((prev) => {
+            const filtered = prev.filter((k) => validRowKeys.has(k));
+            return filtered.length === prev.length ? prev : filtered;
+          });
+          setSortColumn(
+            (prev) => prev != null && validColumns.has(prev) ? prev : null
+          );
+          setSortColumnDag(
+            (prev) => validDagColumns.has(prev) ? prev : "weight"
+          );
           setError(null);
         } catch (e) {
           console.error(e);
@@ -21840,6 +22115,47 @@
       }
       load();
     }, []);
+    (0, import_react6.useEffect)(() => {
+      saveState({
+        searchTerm,
+        sortColumn,
+        sortDirection,
+        expandedRowKeys,
+        selectedItemIds,
+        lootGuideMode,
+        sortColumnDag,
+        sortDirectionDag
+      });
+    }, [
+      searchTerm,
+      sortColumn,
+      sortDirection,
+      expandedRowKeys,
+      selectedItemIds,
+      lootGuideMode,
+      sortColumnDag,
+      sortDirectionDag
+    ]);
+    const lootGuideIndex = (0, import_react6.useMemo)(() => {
+      switch (lootGuideMode) {
+        case "recycling":
+          return idToRecyclesInto;
+        case "salvaging":
+          return idToSalvagesInto;
+        default:
+          return idToRecipe;
+      }
+    }, [lootGuideMode, idToRecipe, idToRecyclesInto, idToSalvagesInto]);
+    (0, import_react6.useEffect)(() => {
+      if (selectedItemIds.size === 0) {
+        setCraftingDag([]);
+        console.log("Crafting DAG updated", []);
+        return;
+      }
+      const dag = buildCraftingDag(lootGuideIndex, selectedItemIds);
+      setCraftingDag(dag);
+      console.log("Crafting DAG updated", dag);
+    }, [lootGuideIndex, selectedItemIds]);
     const handleSortChange = (col) => {
       setSortColumn((prevCol) => {
         if (prevCol === col) {
@@ -21868,16 +22184,56 @@
     const handleCollapseAllRows = () => {
       setExpandedRowKeys([]);
     };
+    const handleSelectionToggle = (id) => {
+      setSelectedItemIds((prev) => {
+        const next = new Set(prev);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        return next;
+      });
+    };
+    const handleClearSelection = () => {
+      setSelectedItemIds(/* @__PURE__ */ new Set());
+    };
+    const handleSortChangeDag = (col) => {
+      setSortColumnDag((prevCol) => {
+        if (prevCol === col) {
+          setSortDirectionDag((prevDir) => prevDir === "asc" ? "desc" : "asc");
+          return prevCol;
+        }
+        setSortDirectionDag("asc");
+        return col;
+      });
+    };
     const filteredItems = (0, import_react6.useMemo)(
       () => filterItems(items, columns, searchTerm),
       [items, columns, searchTerm]
     );
     const sortedItems = (0, import_react6.useMemo)(
-      () => sortRows(filteredItems, sortColumn, sortDirection, columns, numericColumns),
-      [filteredItems, sortColumn, sortDirection, columns, numericColumns]
+      () => sortRows(filteredItems, sortColumn, sortDirection, columns, numericColumns, {
+        selectedItemIds,
+        nameColumn: "name"
+      }),
+      [filteredItems, sortColumn, sortDirection, columns, numericColumns, selectedItemIds]
     );
     const totalCount = items.length;
     const filteredCount = filteredItems.length;
+    const dagRows = (0, import_react6.useMemo)(() => {
+      const rows = craftingDag.map((node) => ({
+        id: node.itemId,
+        names: idToName[node.itemId] ?? node.itemId,
+        weight: node.weight
+      }));
+      const dir = sortDirectionDag === "asc" ? 1 : -1;
+      return [...rows].sort((a, b) => {
+        if (sortColumnDag === "weight") {
+          return dir * (Number(a.weight) - Number(b.weight));
+        }
+        const key = sortColumnDag === "names" ? "names" : "id";
+        return dir * String(a[key]).localeCompare(String(b[key]));
+      });
+    }, [craftingDag, idToName, sortColumnDag, sortDirectionDag]);
+    const showLootGuide = craftingDag.length > 0;
     return /* @__PURE__ */ import_react6.default.createElement(import_react6.default.Fragment, null, /* @__PURE__ */ import_react6.default.createElement(
       SearchBar,
       {
@@ -21887,9 +22243,10 @@
         totalCount,
         filteredCount,
         onExpandAllRows: handleExpandAllRows,
-        onCollapseAllRows: handleCollapseAllRows
+        onCollapseAllRows: handleCollapseAllRows,
+        onClearSelection: handleClearSelection
       }
-    ), /* @__PURE__ */ import_react6.default.createElement("main", { className: "main" }, /* @__PURE__ */ import_react6.default.createElement("div", { className: "table-wrap" }, loading ? /* @__PURE__ */ import_react6.default.createElement("div", { className: "loading" }, "Loading items\u2026") : error ? /* @__PURE__ */ import_react6.default.createElement("table", { id: "table", className: "table" }, /* @__PURE__ */ import_react6.default.createElement("tbody", null, /* @__PURE__ */ import_react6.default.createElement("tr", null, /* @__PURE__ */ import_react6.default.createElement("td", { colSpan: Math.max(columns.length, 1), className: "error" }, error)))) : /* @__PURE__ */ import_react6.default.createElement(
+    ), /* @__PURE__ */ import_react6.default.createElement("main", { className: showLootGuide ? "main main--split" : "main" }, showLootGuide ? /* @__PURE__ */ import_react6.default.createElement(import_react6.default.Fragment, null, /* @__PURE__ */ import_react6.default.createElement("div", { className: "main__top" }, /* @__PURE__ */ import_react6.default.createElement("div", { className: "table-wrap" }, loading ? /* @__PURE__ */ import_react6.default.createElement("div", { className: "loading" }, "Loading items\u2026") : error ? /* @__PURE__ */ import_react6.default.createElement("table", { id: "table", className: "table" }, /* @__PURE__ */ import_react6.default.createElement("tbody", null, /* @__PURE__ */ import_react6.default.createElement("tr", null, /* @__PURE__ */ import_react6.default.createElement("td", { colSpan: columns.length + 1, className: "error" }, error)))) : /* @__PURE__ */ import_react6.default.createElement(
       Table,
       {
         columns,
@@ -21898,9 +22255,71 @@
         sortDirection,
         onSortChange: handleSortChange,
         idToName,
-        craftBenchIdToName,
+        benches,
         expandedRowKeys,
-        onRowExpandToggle: handleRowExpandToggle
+        onRowExpandToggle: handleRowExpandToggle,
+        selectedItemIds,
+        onSelectionToggle: handleSelectionToggle
+      }
+    ))), /* @__PURE__ */ import_react6.default.createElement("div", { className: "loot-guide-panel" }, /* @__PURE__ */ import_react6.default.createElement("h2", { className: "loot-guide-panel__title" }, "Looting Guide"), /* @__PURE__ */ import_react6.default.createElement("div", { className: "loot-guide-panel__tabs", role: "tablist" }, /* @__PURE__ */ import_react6.default.createElement(
+      "button",
+      {
+        type: "button",
+        role: "tab",
+        "aria-selected": lootGuideMode === "crafting",
+        className: `loot-guide-panel__tab ${lootGuideMode === "crafting" ? "loot-guide-panel__tab--active" : ""}`,
+        onClick: () => setLootGuideMode("crafting")
+      },
+      "Crafting"
+    ), /* @__PURE__ */ import_react6.default.createElement(
+      "button",
+      {
+        type: "button",
+        role: "tab",
+        "aria-selected": lootGuideMode === "recycling",
+        className: `loot-guide-panel__tab ${lootGuideMode === "recycling" ? "loot-guide-panel__tab--active" : ""}`,
+        onClick: () => setLootGuideMode("recycling")
+      },
+      "Recycling"
+    ), /* @__PURE__ */ import_react6.default.createElement(
+      "button",
+      {
+        type: "button",
+        role: "tab",
+        "aria-selected": lootGuideMode === "salvaging",
+        className: `loot-guide-panel__tab ${lootGuideMode === "salvaging" ? "loot-guide-panel__tab--active" : ""}`,
+        onClick: () => setLootGuideMode("salvaging")
+      },
+      "Salvaging"
+    )), /* @__PURE__ */ import_react6.default.createElement("div", { className: "table-wrap" }, /* @__PURE__ */ import_react6.default.createElement(
+      Table,
+      {
+        columns: ["names", "weight"],
+        rows: dagRows,
+        sortColumn: sortColumnDag,
+        sortDirection: sortDirectionDag,
+        onSortChange: handleSortChangeDag,
+        idToName,
+        benches,
+        expandedRowKeys: [],
+        onRowExpandToggle: () => {
+        },
+        showSelectionColumn: false
+      }
+    )))) : /* @__PURE__ */ import_react6.default.createElement("div", { className: "table-wrap" }, loading ? /* @__PURE__ */ import_react6.default.createElement("div", { className: "loading" }, "Loading items\u2026") : error ? /* @__PURE__ */ import_react6.default.createElement("table", { id: "table", className: "table" }, /* @__PURE__ */ import_react6.default.createElement("tbody", null, /* @__PURE__ */ import_react6.default.createElement("tr", null, /* @__PURE__ */ import_react6.default.createElement("td", { colSpan: columns.length + 1, className: "error" }, error)))) : /* @__PURE__ */ import_react6.default.createElement(
+      Table,
+      {
+        columns,
+        rows: sortedItems,
+        sortColumn,
+        sortDirection,
+        onSortChange: handleSortChange,
+        idToName,
+        benches,
+        expandedRowKeys,
+        onRowExpandToggle: handleRowExpandToggle,
+        selectedItemIds,
+        onSelectionToggle: handleSelectionToggle
       }
     ))));
   }
