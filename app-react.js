@@ -21561,7 +21561,86 @@
   // src/react/components/TableHeader.jsx
   var import_react2 = __toESM(require_react(), 1);
 
+  // src/react/components/cellValue.js
+  function formatCellValue(row, col, idToName, benches, options = {}) {
+    const expanded = options.expanded === true;
+    const separator = expanded ? "\n" : ", ";
+    const substitions = {
+      stackSize: 1,
+      foundIn: "Unknown"
+    };
+    const defaultValue = "-";
+    const value = row[col];
+    if (value === void 0 || value === null || value === "") {
+      const substitution = substitions[col];
+      return substitution ? { text: String(substitution), isEmpty: false } : { text: defaultValue, isEmpty: true };
+    }
+    if (col === "craftBench") {
+      const mapBenchId = (raw) => {
+        const key = String(raw).trim();
+        if (!key || key === "undefined" || key === "null") return null;
+        if (benches && benches[key] != null) {
+          return benches[key];
+        }
+        return key;
+      };
+      let parts = [];
+      if (Array.isArray(value)) {
+        parts = value.map(mapBenchId).filter((x) => x != null && x !== "");
+      } else if (typeof value === "string" && value.includes(",")) {
+        parts = value.split(",").map((s) => mapBenchId(s)).filter((x) => x != null && x !== "");
+      } else {
+        const single = mapBenchId(value);
+        if (single != null && single !== "") {
+          parts = [single];
+        }
+      }
+      if (parts.length === 0) {
+        return { text: defaultValue, isEmpty: true };
+      }
+      const text = parts.join(separator);
+      return { text, isEmpty: false };
+    }
+    if (Array.isArray(value)) {
+      const sorted = [...value].sort();
+      return { text: sorted.join(separator), isEmpty: false };
+    }
+    if (typeof value === "object") {
+      const entries = Object.entries(value);
+      if (entries.length === 0) {
+        return { text: defaultValue, isEmpty: true };
+      }
+      const pairs = entries.map(([rawKey, rawVal]) => {
+        const displayKey = (idToName && idToName[String(rawKey)]) != null ? idToName[String(rawKey)] : String(rawKey);
+        let valText;
+        if (rawVal === null || typeof rawVal !== "object") {
+          valText = String(rawVal);
+        } else {
+          valText = JSON.stringify(rawVal);
+        }
+        return `${displayKey}: ${valText}`;
+      });
+      return { text: pairs.join(separator), isEmpty: false };
+    }
+    return { text: String(value), isEmpty: false };
+  }
+
   // src/react/tableUtils.js
+  var SEARCH_COLUMNS = ["name", "type", "rarity", "craftBench"];
+  function augmentRowsWithRendered(items, columns, idToName, benches) {
+    if (idToName == null || benches == null || typeof idToName !== "object" || typeof benches !== "object") {
+      return items;
+    }
+    return items.map((row) => {
+      const _rendered = {};
+      const _renderedExpanded = {};
+      for (const col of columns) {
+        _rendered[col] = formatCellValue(row, col, idToName, benches);
+        _renderedExpanded[col] = formatCellValue(row, col, idToName, benches, { expanded: true });
+      }
+      return { ...row, _rendered, _renderedExpanded };
+    });
+  }
   function rowSearchText(row, columns) {
     return columns.map((col) => {
       const v = row[col];
@@ -21572,11 +21651,19 @@
       return String(v);
     }).join(" ").toLowerCase();
   }
-  function filterItems(items, columns, keyword) {
+  function rowSearchTextRendered(row, columns, idToName, benches) {
+    const useCache = row._rendered && columns.every((col) => row._rendered[col] != null);
+    if (useCache) {
+      return columns.map((col) => row._rendered[col].text).join(" ").toLowerCase();
+    }
+    return columns.map((col) => formatCellValue(row, col, idToName, benches).text).join(" ").toLowerCase();
+  }
+  function filterItems(items, keyword, idToName, benches) {
     const terms = keyword.toLowerCase().trim().split(/\s+/).filter(Boolean);
     if (terms.length === 0) return items;
+    const useRendered = idToName != null && benches != null && typeof idToName === "object" && typeof benches === "object";
     return items.filter((row) => {
-      const text = rowSearchText(row, columns);
+      const text = useRendered ? rowSearchTextRendered(row, SEARCH_COLUMNS, idToName, benches) : rowSearchText(row, SEARCH_COLUMNS);
       return terms.every((t) => text.includes(t));
     });
   }
@@ -21654,6 +21741,7 @@
       "th",
       {
         key: SELECTION_COLUMN_ID,
+        className: "col-selection",
         "data-column": SELECTION_COLUMN_ID,
         title: "Select",
         onClick: () => onSortChange(SELECTION_COLUMN_ID)
@@ -21695,72 +21783,6 @@
 
   // src/react/components/Row.jsx
   var import_react3 = __toESM(require_react(), 1);
-
-  // src/react/components/cellValue.js
-  function formatCellValue(row, col, idToName, benches, options = {}) {
-    const expanded = options.expanded === true;
-    const separator = expanded ? "\n" : ", ";
-    const substitions = {
-      stackSize: 1,
-      foundIn: "Unknown"
-    };
-    const defaultValue = "-";
-    const value = row[col];
-    if (value === void 0 || value === null || value === "") {
-      const substitution = substitions[col];
-      return substitution ? { text: String(substitution), isEmpty: false } : { text: defaultValue, isEmpty: true };
-    }
-    if (col === "craftBench") {
-      const mapBenchId = (raw) => {
-        const key = String(raw).trim();
-        if (!key || key === "undefined" || key === "null") return null;
-        if (benches && benches[key] != null) {
-          return benches[key];
-        }
-        return key;
-      };
-      let parts = [];
-      if (Array.isArray(value)) {
-        parts = value.map(mapBenchId).filter((x) => x != null && x !== "");
-      } else if (typeof value === "string" && value.includes(",")) {
-        parts = value.split(",").map((s) => mapBenchId(s)).filter((x) => x != null && x !== "");
-      } else {
-        const single = mapBenchId(value);
-        if (single != null && single !== "") {
-          parts = [single];
-        }
-      }
-      if (parts.length === 0) {
-        return { text: defaultValue, isEmpty: true };
-      }
-      const text = parts.join(separator);
-      return { text, isEmpty: false };
-    }
-    if (Array.isArray(value)) {
-      const sorted = [...value].sort();
-      return { text: sorted.join(separator), isEmpty: false };
-    }
-    if (typeof value === "object") {
-      const entries = Object.entries(value);
-      if (entries.length === 0) {
-        return { text: defaultValue, isEmpty: true };
-      }
-      const pairs = entries.map(([rawKey, rawVal]) => {
-        const displayKey = (idToName && idToName[String(rawKey)]) != null ? idToName[String(rawKey)] : String(rawKey);
-        let valText;
-        if (rawVal === null || typeof rawVal !== "object") {
-          valText = String(rawVal);
-        } else {
-          valText = JSON.stringify(rawVal);
-        }
-        return `${displayKey}: ${valText}`;
-      });
-      return { text: pairs.join(separator), isEmpty: false };
-    }
-    return { text: String(value), isEmpty: false };
-  }
-
-  // src/react/components/Row.jsx
   function Row({
     columns,
     row,
@@ -21772,7 +21794,7 @@
     onSelectionToggle
   }) {
     const trClassName = [isExpanded ? "row-expanded" : null, isSelected ? "row-selected" : null].filter(Boolean).join(" ") || void 0;
-    return /* @__PURE__ */ import_react3.default.createElement("tr", { className: trClassName, onClick: onRowClick }, onSelectionToggle != null ? /* @__PURE__ */ import_react3.default.createElement("td", { onClick: (e) => e.stopPropagation() }, /* @__PURE__ */ import_react3.default.createElement(
+    return /* @__PURE__ */ import_react3.default.createElement("tr", { className: trClassName, onClick: onRowClick }, onSelectionToggle != null ? /* @__PURE__ */ import_react3.default.createElement("td", { className: "col-selection", onClick: (e) => e.stopPropagation() }, /* @__PURE__ */ import_react3.default.createElement(
       "input",
       {
         type: "checkbox",
@@ -21783,13 +21805,9 @@
         "aria-checked": isSelected
       }
     )) : null, columns.map((col) => {
-      const { text, isEmpty } = formatCellValue(
-        row,
-        col,
-        idToName,
-        benches,
-        { expanded: isExpanded }
-      );
+      const cache = isExpanded ? row._renderedExpanded : row._rendered;
+      const result = cache?.[col] ?? formatCellValue(row, col, idToName, benches, { expanded: isExpanded });
+      const { text, isEmpty } = result;
       const cellClassNames = [
         isEmpty ? "empty" : null,
         isExpanded ? "cell-expanded" : null
@@ -21847,7 +21865,8 @@
     onSelectionToggle,
     showSelectionColumn = true
   }) {
-    return /* @__PURE__ */ import_react5.default.createElement("table", { id: "table", className: "table" }, /* @__PURE__ */ import_react5.default.createElement("thead", null, /* @__PURE__ */ import_react5.default.createElement(
+    const tableClassName = ["table", showSelectionColumn ? "table--with-selection" : null].filter(Boolean).join(" ");
+    return /* @__PURE__ */ import_react5.default.createElement("table", { id: "table", className: tableClassName }, /* @__PURE__ */ import_react5.default.createElement("thead", null, /* @__PURE__ */ import_react5.default.createElement(
       TableHeader,
       {
         columns,
@@ -22047,6 +22066,8 @@
       () => new Set(initialState.selectedItemIds)
     );
     const [lootGuideMode, setLootGuideMode] = (0, import_react6.useState)(initialState.lootGuideMode);
+    const [lootGuideOpen, setLootGuideOpen] = (0, import_react6.useState)(true);
+    const [lootGuideWidth, setLootGuideWidth] = (0, import_react6.useState)(320);
     const [craftingDag, setCraftingDag] = (0, import_react6.useState)(() => []);
     const [sortColumnDag, setSortColumnDag] = (0, import_react6.useState)(initialState.sortColumnDag);
     const [sortDirectionDag, setSortDirectionDag] = (0, import_react6.useState)(initialState.sortDirectionDag);
@@ -22205,9 +22226,13 @@
         return col;
       });
     };
+    const itemsWithRendered = (0, import_react6.useMemo)(
+      () => augmentRowsWithRendered(items, columns, idToName, benches),
+      [items, columns, idToName, benches]
+    );
     const filteredItems = (0, import_react6.useMemo)(
-      () => filterItems(items, columns, searchTerm),
-      [items, columns, searchTerm]
+      () => filterItems(itemsWithRendered, searchTerm, idToName, benches),
+      [itemsWithRendered, searchTerm, idToName, benches]
     );
     const sortedItems = (0, import_react6.useMemo)(
       () => sortRows(filteredItems, sortColumn, sortDirection, columns, numericColumns, {
@@ -22234,6 +22259,32 @@
       });
     }, [craftingDag, idToName, sortColumnDag, sortDirectionDag]);
     const showLootGuide = craftingDag.length > 0;
+    const panelOpen = showLootGuide && lootGuideOpen;
+    const resizeStartX = (0, import_react6.useRef)(0);
+    const resizeStartWidth = (0, import_react6.useRef)(0);
+    const handleResizeStart = (0, import_react6.useCallback)((e) => {
+      e.preventDefault();
+      resizeStartX.current = e.clientX;
+      resizeStartWidth.current = lootGuideWidth;
+      const onMove = (moveEvent) => {
+        const delta = resizeStartX.current - moveEvent.clientX;
+        const newWidth = Math.min(800, Math.max(200, resizeStartWidth.current + delta));
+        setLootGuideWidth(newWidth);
+      };
+      const onUp = () => {
+        document.removeEventListener("mousemove", onMove);
+        document.removeEventListener("mouseup", onUp);
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+      };
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+      document.addEventListener("mousemove", onMove);
+      document.addEventListener("mouseup", onUp);
+    }, [lootGuideWidth]);
+    const handleDrawerToggle = (0, import_react6.useCallback)(() => {
+      setLootGuideOpen((prev) => !prev);
+    }, []);
     return /* @__PURE__ */ import_react6.default.createElement(import_react6.default.Fragment, null, /* @__PURE__ */ import_react6.default.createElement(
       SearchBar,
       {
@@ -22246,82 +22297,119 @@
         onCollapseAllRows: handleCollapseAllRows,
         onClearSelection: handleClearSelection
       }
-    ), /* @__PURE__ */ import_react6.default.createElement("main", { className: showLootGuide ? "main main--split" : "main" }, showLootGuide ? /* @__PURE__ */ import_react6.default.createElement(import_react6.default.Fragment, null, /* @__PURE__ */ import_react6.default.createElement("div", { className: "main__top" }, /* @__PURE__ */ import_react6.default.createElement("div", { className: "table-wrap" }, loading ? /* @__PURE__ */ import_react6.default.createElement("div", { className: "loading" }, "Loading items\u2026") : error ? /* @__PURE__ */ import_react6.default.createElement("table", { id: "table", className: "table" }, /* @__PURE__ */ import_react6.default.createElement("tbody", null, /* @__PURE__ */ import_react6.default.createElement("tr", null, /* @__PURE__ */ import_react6.default.createElement("td", { colSpan: columns.length + 1, className: "error" }, error)))) : /* @__PURE__ */ import_react6.default.createElement(
-      Table,
-      {
-        columns,
-        rows: sortedItems,
-        sortColumn,
-        sortDirection,
-        onSortChange: handleSortChange,
-        idToName,
-        benches,
-        expandedRowKeys,
-        onRowExpandToggle: handleRowExpandToggle,
-        selectedItemIds,
-        onSelectionToggle: handleSelectionToggle
-      }
-    ))), /* @__PURE__ */ import_react6.default.createElement("div", { className: "loot-guide-panel" }, /* @__PURE__ */ import_react6.default.createElement("h2", { className: "loot-guide-panel__title" }, "Looting Guide"), /* @__PURE__ */ import_react6.default.createElement("div", { className: "loot-guide-panel__tabs", role: "tablist" }, /* @__PURE__ */ import_react6.default.createElement(
-      "button",
-      {
-        type: "button",
-        role: "tab",
-        "aria-selected": lootGuideMode === "crafting",
-        className: `loot-guide-panel__tab ${lootGuideMode === "crafting" ? "loot-guide-panel__tab--active" : ""}`,
-        onClick: () => setLootGuideMode("crafting")
-      },
-      "Crafting"
     ), /* @__PURE__ */ import_react6.default.createElement(
-      "button",
+      "main",
       {
-        type: "button",
-        role: "tab",
-        "aria-selected": lootGuideMode === "recycling",
-        className: `loot-guide-panel__tab ${lootGuideMode === "recycling" ? "loot-guide-panel__tab--active" : ""}`,
-        onClick: () => setLootGuideMode("recycling")
+        className: panelOpen ? "main main--split" : "main",
+        style: panelOpen ? { "--loot-guide-width": `${lootGuideWidth}px` } : void 0
       },
-      "Recycling"
-    ), /* @__PURE__ */ import_react6.default.createElement(
-      "button",
-      {
-        type: "button",
-        role: "tab",
-        "aria-selected": lootGuideMode === "salvaging",
-        className: `loot-guide-panel__tab ${lootGuideMode === "salvaging" ? "loot-guide-panel__tab--active" : ""}`,
-        onClick: () => setLootGuideMode("salvaging")
-      },
-      "Salvaging"
-    )), /* @__PURE__ */ import_react6.default.createElement("div", { className: "table-wrap" }, /* @__PURE__ */ import_react6.default.createElement(
-      Table,
-      {
-        columns: ["names", "weight"],
-        rows: dagRows,
-        sortColumn: sortColumnDag,
-        sortDirection: sortDirectionDag,
-        onSortChange: handleSortChangeDag,
-        idToName,
-        benches,
-        expandedRowKeys: [],
-        onRowExpandToggle: () => {
+      showLootGuide ? /* @__PURE__ */ import_react6.default.createElement(import_react6.default.Fragment, null, /* @__PURE__ */ import_react6.default.createElement("div", { className: "main__top" }, /* @__PURE__ */ import_react6.default.createElement("div", { className: "table-wrap" }, loading ? /* @__PURE__ */ import_react6.default.createElement("div", { className: "loading" }, "Loading items\u2026") : error ? /* @__PURE__ */ import_react6.default.createElement("table", { id: "table", className: "table" }, /* @__PURE__ */ import_react6.default.createElement("tbody", null, /* @__PURE__ */ import_react6.default.createElement("tr", null, /* @__PURE__ */ import_react6.default.createElement("td", { colSpan: columns.length + 1, className: "error" }, error)))) : /* @__PURE__ */ import_react6.default.createElement(
+        Table,
+        {
+          columns,
+          rows: sortedItems,
+          sortColumn,
+          sortDirection,
+          onSortChange: handleSortChange,
+          idToName,
+          benches,
+          expandedRowKeys,
+          onRowExpandToggle: handleRowExpandToggle,
+          selectedItemIds,
+          onSelectionToggle: handleSelectionToggle
+        }
+      ))), panelOpen && /* @__PURE__ */ import_react6.default.createElement(import_react6.default.Fragment, null, /* @__PURE__ */ import_react6.default.createElement(
+        "div",
+        {
+          className: "loot-guide-resize-handle",
+          onMouseDown: handleResizeStart,
+          role: "separator",
+          "aria-orientation": "vertical"
+        }
+      ), /* @__PURE__ */ import_react6.default.createElement(
+        "button",
+        {
+          type: "button",
+          className: "loot-guide-drawer loot-guide-drawer--on-panel",
+          onClick: handleDrawerToggle,
+          "aria-label": "Close Looting Guide",
+          "aria-expanded": true
         },
-        showSelectionColumn: false
-      }
-    )))) : /* @__PURE__ */ import_react6.default.createElement("div", { className: "table-wrap" }, loading ? /* @__PURE__ */ import_react6.default.createElement("div", { className: "loading" }, "Loading items\u2026") : error ? /* @__PURE__ */ import_react6.default.createElement("table", { id: "table", className: "table" }, /* @__PURE__ */ import_react6.default.createElement("tbody", null, /* @__PURE__ */ import_react6.default.createElement("tr", null, /* @__PURE__ */ import_react6.default.createElement("td", { colSpan: columns.length + 1, className: "error" }, error)))) : /* @__PURE__ */ import_react6.default.createElement(
-      Table,
-      {
-        columns,
-        rows: sortedItems,
-        sortColumn,
-        sortDirection,
-        onSortChange: handleSortChange,
-        idToName,
-        benches,
-        expandedRowKeys,
-        onRowExpandToggle: handleRowExpandToggle,
-        selectedItemIds,
-        onSelectionToggle: handleSelectionToggle
-      }
-    ))));
+        "\u203A"
+      ), /* @__PURE__ */ import_react6.default.createElement("div", { className: "loot-guide-panel" }, /* @__PURE__ */ import_react6.default.createElement("h2", { className: "loot-guide-panel__title" }, "Looting Guide"), /* @__PURE__ */ import_react6.default.createElement("div", { className: "loot-guide-panel__tabs", role: "tablist" }, /* @__PURE__ */ import_react6.default.createElement(
+        "button",
+        {
+          type: "button",
+          role: "tab",
+          "aria-selected": lootGuideMode === "crafting",
+          className: `loot-guide-panel__tab ${lootGuideMode === "crafting" ? "loot-guide-panel__tab--active" : ""}`,
+          onClick: () => setLootGuideMode("crafting")
+        },
+        "Crafting"
+      ), /* @__PURE__ */ import_react6.default.createElement(
+        "button",
+        {
+          type: "button",
+          role: "tab",
+          "aria-selected": lootGuideMode === "recycling",
+          className: `loot-guide-panel__tab ${lootGuideMode === "recycling" ? "loot-guide-panel__tab--active" : ""}`,
+          onClick: () => setLootGuideMode("recycling")
+        },
+        "Recycling"
+      ), /* @__PURE__ */ import_react6.default.createElement(
+        "button",
+        {
+          type: "button",
+          role: "tab",
+          "aria-selected": lootGuideMode === "salvaging",
+          className: `loot-guide-panel__tab ${lootGuideMode === "salvaging" ? "loot-guide-panel__tab--active" : ""}`,
+          onClick: () => setLootGuideMode("salvaging")
+        },
+        "Salvaging"
+      )), /* @__PURE__ */ import_react6.default.createElement("div", { className: "table-wrap" }, /* @__PURE__ */ import_react6.default.createElement(
+        Table,
+        {
+          columns: ["names", "weight"],
+          rows: dagRows,
+          sortColumn: sortColumnDag,
+          sortDirection: sortDirectionDag,
+          onSortChange: handleSortChangeDag,
+          idToName,
+          benches,
+          expandedRowKeys: [],
+          onRowExpandToggle: () => {
+          },
+          showSelectionColumn: false
+        }
+      ))))) : null,
+      showLootGuide && !panelOpen ? /* @__PURE__ */ import_react6.default.createElement(
+        "button",
+        {
+          type: "button",
+          className: "loot-guide-drawer loot-guide-drawer--tab",
+          onClick: handleDrawerToggle,
+          "aria-label": "Open Looting Guide",
+          "aria-expanded": false
+        },
+        "\u2039"
+      ) : null,
+      !showLootGuide ? /* @__PURE__ */ import_react6.default.createElement("div", { className: "table-wrap" }, loading ? /* @__PURE__ */ import_react6.default.createElement("div", { className: "loading" }, "Loading items\u2026") : error ? /* @__PURE__ */ import_react6.default.createElement("table", { id: "table", className: "table" }, /* @__PURE__ */ import_react6.default.createElement("tbody", null, /* @__PURE__ */ import_react6.default.createElement("tr", null, /* @__PURE__ */ import_react6.default.createElement("td", { colSpan: columns.length + 1, className: "error" }, error)))) : /* @__PURE__ */ import_react6.default.createElement(
+        Table,
+        {
+          columns,
+          rows: sortedItems,
+          sortColumn,
+          sortDirection,
+          onSortChange: handleSortChange,
+          idToName,
+          benches,
+          expandedRowKeys,
+          onRowExpandToggle: handleRowExpandToggle,
+          selectedItemIds,
+          onSelectionToggle: handleSelectionToggle
+        }
+      )) : null
+    ));
   }
 
   // src/react/main.jsx
