@@ -21575,6 +21575,10 @@
       const substitution = substitions[col];
       return substitution ? { text: String(substitution), isEmpty: false } : { text: defaultValue, isEmpty: true };
     }
+    if (col === "kind" && typeof value === "string") {
+      const text = value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
+      return { text, isEmpty: false };
+    }
     if (col === "craftBench") {
       const mapBenchId = (raw) => {
         const key = String(raw).trim();
@@ -21735,7 +21739,8 @@
     sortColumn,
     sortDirection,
     onSortChange,
-    showSelectionColumn = true
+    showSelectionColumn = true,
+    sortable = true
   }) {
     return /* @__PURE__ */ import_react2.default.createElement("tr", null, showSelectionColumn && /* @__PURE__ */ import_react2.default.createElement(
       "th",
@@ -21744,9 +21749,9 @@
         className: "col-selection",
         "data-column": SELECTION_COLUMN_ID,
         title: "Select",
-        onClick: () => onSortChange(SELECTION_COLUMN_ID)
+        onClick: sortable ? () => onSortChange(SELECTION_COLUMN_ID) : void 0
       },
-      /* @__PURE__ */ import_react2.default.createElement(
+      sortable && /* @__PURE__ */ import_react2.default.createElement(
         "span",
         {
           className: `sort-arrow${sortColumn === SELECTION_COLUMN_ID ? " visible" : ""}`,
@@ -21757,16 +21762,17 @@
     ), columns.map((col) => {
       const isSorted = sortColumn === col;
       const arrow = isSorted ? sortDirection === "asc" ? "\u2191" : "\u2193" : "";
+      const label = col === "kind" ? "Kind" : col;
       return /* @__PURE__ */ import_react2.default.createElement(
         "th",
         {
           key: col,
           "data-column": col,
-          title: col,
-          onClick: () => onSortChange(col)
+          title: label,
+          onClick: sortable ? () => onSortChange(col) : void 0
         },
-        col,
-        /* @__PURE__ */ import_react2.default.createElement(
+        label,
+        sortable && /* @__PURE__ */ import_react2.default.createElement(
           "span",
           {
             className: `sort-arrow${isSorted ? " visible" : ""}`,
@@ -21825,9 +21831,14 @@
     expandedRowKeys = [],
     onRowExpandToggle,
     selectedItemIds = /* @__PURE__ */ new Set(),
-    onSelectionToggle
+    onSelectionToggle,
+    showSelectionColumn = true
   }) {
+    const colSpan = columns.length + (showSelectionColumn ? 1 : 0);
     return /* @__PURE__ */ import_react4.default.createElement(import_react4.default.Fragment, null, rows.map((row, index) => {
+      if (row._sectionLabel != null) {
+        return /* @__PURE__ */ import_react4.default.createElement("tr", { key: `_divider-${row._sectionLabel}-${index}`, className: "table-section-divider" }, /* @__PURE__ */ import_react4.default.createElement("td", { colSpan }, row._sectionLabel));
+      }
       const rowKey = row.id ?? index;
       const isExpanded = expandedRowKeys && typeof expandedRowKeys.includes === "function" ? expandedRowKeys.includes(rowKey) : false;
       const handleRowClick = typeof onRowExpandToggle === "function" ? () => onRowExpandToggle(rowKey) : void 0;
@@ -21863,7 +21874,8 @@
     onRowExpandToggle,
     selectedItemIds,
     onSelectionToggle,
-    showSelectionColumn = true
+    showSelectionColumn = true,
+    sortable = true
   }) {
     const tableClassName = ["table", showSelectionColumn ? "table--with-selection" : null].filter(Boolean).join(" ");
     return /* @__PURE__ */ import_react5.default.createElement("table", { id: "table", className: tableClassName }, /* @__PURE__ */ import_react5.default.createElement("thead", null, /* @__PURE__ */ import_react5.default.createElement(
@@ -21873,7 +21885,8 @@
         sortColumn,
         sortDirection,
         onSortChange,
-        showSelectionColumn
+        showSelectionColumn,
+        sortable
       }
     )), /* @__PURE__ */ import_react5.default.createElement("tbody", null, /* @__PURE__ */ import_react5.default.createElement(
       TableBody,
@@ -21885,7 +21898,8 @@
         expandedRowKeys,
         onRowExpandToggle,
         selectedItemIds,
-        onSelectionToggle
+        onSelectionToggle,
+        showSelectionColumn
       }
     )));
   }
@@ -21973,12 +21987,27 @@
         nodeWeights.set(itemId, sum);
       }
     }
-    return nodeList.map((itemId) => ({
-      itemId,
-      edges: outgoingEdgesMap.get(itemId) ?? [],
-      incomingEdges: incomingEdgesMap.get(itemId) ?? [],
-      weight: nodeWeights.get(itemId) ?? 1
-    }));
+    return nodeList.map((itemId) => {
+      const outgoing = outgoingEdgesMap.get(itemId) ?? [];
+      const incoming = incomingEdgesMap.get(itemId) ?? [];
+      const hasOutgoing = outgoing.length > 0;
+      const hasIncoming = incoming.length > 0;
+      let kind;
+      if (!hasIncoming) {
+        kind = "selected";
+      } else if (hasOutgoing) {
+        kind = "intermediary";
+      } else {
+        kind = "basic";
+      }
+      return {
+        itemId,
+        edges: outgoing,
+        incomingEdges: incoming,
+        weight: nodeWeights.get(itemId) ?? 1,
+        kind
+      };
+    });
   }
 
   // src/react/persistence.js
@@ -21993,7 +22022,7 @@
       expandedRowKeys: [],
       selectedItemIds: [],
       lootGuideMode: "crafting",
-      sortColumnDag: "weight",
+      sortColumnDag: "kind",
       sortDirectionDag: "asc"
     };
   }
@@ -22011,7 +22040,7 @@
         expandedRowKeys: Array.isArray(parsed.expandedRowKeys) ? parsed.expandedRowKeys : [],
         selectedItemIds: Array.isArray(parsed.selectedItemIds) ? parsed.selectedItemIds : [],
         lootGuideMode: parsed.lootGuideMode === "recycling" || parsed.lootGuideMode === "salvaging" ? parsed.lootGuideMode : "crafting",
-        sortColumnDag: typeof parsed.sortColumnDag === "string" ? parsed.sortColumnDag : "weight",
+        sortColumnDag: typeof parsed.sortColumnDag === "string" ? parsed.sortColumnDag : "kind",
         sortDirectionDag: parsed.sortDirectionDag === "desc" ? "desc" : "asc"
       };
     } catch {
@@ -22028,7 +22057,7 @@
         expandedRowKeys: Array.isArray(state.expandedRowKeys) ? state.expandedRowKeys : [],
         selectedItemIds: state.selectedItemIds instanceof Set ? Array.from(state.selectedItemIds) : Array.isArray(state.selectedItemIds) ? state.selectedItemIds : [],
         lootGuideMode: state.lootGuideMode ?? "crafting",
-        sortColumnDag: state.sortColumnDag ?? "weight",
+        sortColumnDag: state.sortColumnDag ?? "kind",
         sortDirectionDag: state.sortDirectionDag === "desc" ? "desc" : "asc"
       };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave));
@@ -22067,7 +22096,9 @@
     );
     const [lootGuideMode, setLootGuideMode] = (0, import_react6.useState)(initialState.lootGuideMode);
     const [lootGuideOpen, setLootGuideOpen] = (0, import_react6.useState)(true);
-    const [lootGuideWidth, setLootGuideWidth] = (0, import_react6.useState)(320);
+    const [lootGuideWidth, setLootGuideWidth] = (0, import_react6.useState)(
+      () => typeof window !== "undefined" ? Math.round(window.innerWidth / 3) : 320
+    );
     const [craftingDag, setCraftingDag] = (0, import_react6.useState)(() => []);
     const [sortColumnDag, setSortColumnDag] = (0, import_react6.useState)(initialState.sortColumnDag);
     const [sortDirectionDag, setSortDirectionDag] = (0, import_react6.useState)(initialState.sortDirectionDag);
@@ -22124,7 +22155,7 @@
             (prev) => prev != null && validColumns.has(prev) ? prev : null
           );
           setSortColumnDag(
-            (prev) => validDagColumns.has(prev) ? prev : "weight"
+            (prev) => validDagColumns.has(prev) ? prev : "kind"
           );
           setError(null);
         } catch (e) {
@@ -22244,20 +22275,31 @@
     const totalCount = items.length;
     const filteredCount = filteredItems.length;
     const dagRows = (0, import_react6.useMemo)(() => {
+      const KIND_ORDER = { basic: 0, intermediary: 1, selected: 2 };
+      const SECTION_LABELS = { basic: "Basic", intermediary: "Intermediary", selected: "Selected" };
       const rows = craftingDag.map((node) => ({
         id: node.itemId,
         names: idToName[node.itemId] ?? node.itemId,
+        kind: node.kind,
         weight: node.weight
       }));
-      const dir = sortDirectionDag === "asc" ? 1 : -1;
-      return [...rows].sort((a, b) => {
-        if (sortColumnDag === "weight") {
-          return dir * (Number(a.weight) - Number(b.weight));
-        }
-        const key = sortColumnDag === "names" ? "names" : "id";
-        return dir * String(a[key]).localeCompare(String(b[key]));
+      rows.sort((a, b) => {
+        const kA = KIND_ORDER[a.kind] ?? 0;
+        const kB = KIND_ORDER[b.kind] ?? 0;
+        if (kA !== kB) return kA - kB;
+        return Number(b.weight) - Number(a.weight);
       });
-    }, [craftingDag, idToName, sortColumnDag, sortDirectionDag]);
+      const withDividers = [];
+      let lastKind = null;
+      for (const row of rows) {
+        if (row.kind !== lastKind) {
+          lastKind = row.kind;
+          withDividers.push({ _sectionLabel: SECTION_LABELS[row.kind] });
+        }
+        withDividers.push(row);
+      }
+      return withDividers;
+    }, [craftingDag, idToName]);
     const showLootGuide = craftingDag.length > 0;
     const panelOpen = showLootGuide && lootGuideOpen;
     const resizeStartX = (0, import_react6.useRef)(0);
@@ -22379,7 +22421,8 @@
           expandedRowKeys: [],
           onRowExpandToggle: () => {
           },
-          showSelectionColumn: false
+          showSelectionColumn: false,
+          sortable: false
         }
       ))))) : null,
       showLootGuide && !panelOpen ? /* @__PURE__ */ import_react6.default.createElement(
